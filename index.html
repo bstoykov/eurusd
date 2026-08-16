@@ -320,24 +320,53 @@
   usdInput.addEventListener('input', recalcFromUsd);
   eurInput.addEventListener('input', recalcFromEur);
 
+  // Try a list of endpoints in order until one works.
+  const ENDPOINTS = [
+    {
+      url: 'https://api.frankfurter.app/latest?from=EUR&to=USD',
+      parse: (d) => ({ rate: d.rates.USD, date: d.date })
+    },
+    {
+      url: 'https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD',
+      parse: (d) => ({ rate: d.rates.USD, date: d.date })
+    },
+    {
+      url: 'https://open.er-api.com/v6/latest/EUR',
+      parse: (d) => ({ rate: d.rates.USD, date: (d.time_last_update_utc || '').slice(0,16) })
+    }
+  ];
+
   async function loadRate(){
     statusDot.className = 'dot loading';
     statusText.textContent = 'зареждане…';
-    try{
-      const res = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD');
-      if(!res.ok) throw new Error('bad response');
-      const data = await res.json();
-      usdPerEur = data.rates.USD;
-      liveRate.textContent = usdPerEur.toFixed(4);
-      statusDot.className = 'dot';
-      const d = new Date(data.date + 'T00:00:00');
-      statusText.textContent = 'обновено · ' + d.toLocaleDateString('bg-BG');
-      recalcFromUsd();
-    }catch(e){
-      statusDot.className = 'dot err';
-      statusText.textContent = 'грешка при зареждане';
-      liveRate.textContent = '—';
+    liveRate.textContent = '—';
+
+    let lastError = null;
+
+    for(const ep of ENDPOINTS){
+      try{
+        const res = await fetch(ep.url);
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const { rate, date } = ep.parse(data);
+        if(!rate || isNaN(rate)) throw new Error('липсва курс в отговора');
+
+        usdPerEur = rate;
+        liveRate.textContent = usdPerEur.toFixed(4);
+        statusDot.className = 'dot';
+        statusText.textContent = date ? ('обновено · ' + date) : 'обновено';
+        recalcFromUsd();
+        return; // success — stop trying further endpoints
+      }catch(e){
+        lastError = e;
+        console.warn('Endpoint failed:', ep.url, e);
+      }
     }
+
+    // all endpoints failed
+    statusDot.className = 'dot err';
+    statusText.textContent = 'грешка: ' + (lastError ? lastError.message : 'няма връзка');
+    console.error('Всички източници на курса се провалиха.', lastError);
   }
 
   refreshBtn.addEventListener('click', loadRate);
