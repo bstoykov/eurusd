@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Табло на курса — USD / EUR / лв</title>
+<meta name="description" content="Курс щатски долар към евро на живо, и постоянната връзка евро–лев 1.95583.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0B1F2E;
+    --panel:#122C40;
+    --panel-2:#0E2536;
+    --line:#1E3A50;
+    --gold:#C9A227;
+    --gold-soft:#E8CE7A;
+    --teal:#4FD1C5;
+    --text:#EDEFF2;
+    --muted:#7E97A8;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(79,209,197,0.08), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(201,162,39,0.10), transparent 55%),
+      var(--ink);
+    color:var(--text);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:48px 20px 80px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:14px;
+  }
+  h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:clamp(28px,5vw,46px);
+    margin:0 0 6px;
+    text-align:center;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    color:var(--muted);
+    font-size:15px;
+    text-align:center;
+    max-width:520px;
+    margin:0 0 44px;
+    line-height:1.5;
+  }
+
+  /* ---- the peg plaque: signature element ---- */
+  .peg{
+    position:relative;
+    background:linear-gradient(180deg, var(--panel), var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:28px 40px;
+    text-align:center;
+    margin-bottom:36px;
+    box-shadow:0 30px 60px -30px rgba(0,0,0,0.6);
+  }
+  .peg::before{
+    content:"ФИКСИРАН КУРС · ОТ 1997 Г.";
+    position:absolute;
+    top:-11px;
+    left:50%;
+    transform:translateX(-50%);
+    background:var(--ink);
+    padding:0 12px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.16em;
+    color:var(--gold-soft);
+  }
+  .peg-value{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:700;
+    font-size:clamp(30px,7vw,52px);
+    letter-spacing:0.01em;
+    color:var(--gold-soft);
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+  .peg-value .unit{font-size:0.4em; color:var(--muted); font-family:'Inter',sans-serif; font-weight:500;}
+  .peg-eq{color:var(--muted); font-family:'Inter',sans-serif; font-size:0.5em; margin:0 2px;}
+
+  /* ---- board ---- */
+  .board{
+    width:100%;
+    max-width:520px;
+    background:linear-gradient(180deg, var(--panel), var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:28px;
+    box-shadow:0 40px 80px -40px rgba(0,0,0,0.7);
+  }
+  .board-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:22px;
+  }
+  .board-title{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600;
+    font-size:15px;
+    color:var(--text);
+  }
+  .status{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);}
+  .dot.err{background:#E27060;}
+  .dot.loading{background:var(--muted); animation:pulse 1.1s infinite ease-in-out;}
+  @keyframes pulse{0%,100%{opacity:0.3;}50%{opacity:1;}}
+
+  .rate-row{
+    font-family:'IBM Plex Mono', monospace;
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    gap:10px;
+    padding:18px 0 24px;
+    border-bottom:1px dashed var(--line);
+    margin-bottom:24px;
+  }
+  .rate-row .big{font-size:clamp(26px,6vw,36px); font-weight:700; color:var(--teal);}
+  .rate-row .lbl{font-size:13px; color:var(--muted);}
+
+  .field{margin-bottom:16px;}
+  .field label{
+    display:block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.08em;
+    color:var(--muted);
+    margin-bottom:6px;
+    text-transform:uppercase;
+  }
+  .input-wrap{
+    display:flex;
+    align-items:center;
+    background:var(--ink);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:10px 14px;
+    transition:border-color .15s ease;
+  }
+  .input-wrap:focus-within{border-color:var(--teal);}
+  .input-wrap .cur{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:14px;
+    color:var(--gold-soft);
+    margin-right:10px;
+    width:36px;
+  }
+  .input-wrap input{
+    flex:1;
+    background:none;
+    border:none;
+    outline:none;
+    color:var(--text);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:19px;
+    font-weight:600;
+    width:100%;
+  }
+  .bgn-out{
+    margin-top:22px;
+    background:rgba(201,162,39,0.06);
+    border:1px solid rgba(201,162,39,0.25);
+    border-radius:6px;
+    padding:16px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .bgn-out .lbl{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.08em; color:var(--muted); text-transform:uppercase;}
+  .bgn-out .val{font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:700; color:var(--gold-soft);}
+
+  .refresh{
+    margin-top:20px;
+    width:100%;
+    background:none;
+    border:1px solid var(--line);
+    color:var(--muted);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    letter-spacing:0.05em;
+    padding:10px;
+    border-radius:6px;
+    cursor:pointer;
+    transition:all .15s ease;
+  }
+  .refresh:hover{border-color:var(--teal); color:var(--teal);}
+  .refresh:focus-visible, .input-wrap input:focus-visible{outline:2px solid var(--teal); outline-offset:2px;}
+
+  footer{
+    margin-top:36px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--muted);
+    text-align:center;
+    max-width:480px;
+    line-height:1.6;
+  }
+  footer a{color:var(--teal); text-decoration:none;}
+  footer a:hover{text-decoration:underline;}
+
+  @media (prefers-reduced-motion: reduce){
+    .dot.loading{animation:none;}
+  }
+</style>
+</head>
+<body>
+
+  <div class="eyebrow">Курсово табло</div>
+  <h1>Долар · Евро · Лев</h1>
+  <p class="sub">USD/EUR се тегли на живо. Евро → лев е винаги 1.95583 — това не се променя, каквото и да прави пазарът.</p>
+
+  <div class="peg">
+    <div class="peg-value">
+      <span>1<span class="unit"> EUR</span></span>
+      <span class="peg-eq">=</span>
+      <span>1.95583<span class="unit"> лв</span></span>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-head">
+      <div class="board-title">Конвертор</div>
+      <div class="status"><span class="dot loading" id="statusDot"></span><span id="statusText">зареждане…</span></div>
+    </div>
+
+    <div class="rate-row">
+      <span class="big" id="liveRate">—</span>
+      <span class="lbl">USD за 1 EUR</span>
+    </div>
+
+    <div class="field">
+      <label for="usdInput">Долари (USD)</label>
+      <div class="input-wrap">
+        <span class="cur">$</span>
+        <input type="text" inputmode="decimal" id="usdInput" value="100">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="eurInput">Евро (EUR)</label>
+      <div class="input-wrap">
+        <span class="cur">€</span>
+        <input type="text" inputmode="decimal" id="eurInput" value="0">
+      </div>
+    </div>
+
+    <div class="bgn-out">
+      <span class="lbl">= в левове</span>
+      <span class="val" id="bgnOut">0.00 лв</span>
+    </div>
+
+    <button class="refresh" id="refreshBtn">↻ Обнови курса</button>
+  </div>
+
+  <footer>
+    Източник на живия курс: Frankfurter API (данни на Европейската централна банка).
+    Връзката евро–лев е фиксирана по закон при въвеждането на еврото в България.
+  </footer>
+
+<script>
+  const PEG = 1.95583; // EUR -> BGN, fixed
+  let usdPerEur = null; // how many USD for 1 EUR
+
+  const usdInput = document.getElementById('usdInput');
+  const eurInput = document.getElementById('eurInput');
+  const bgnOut = document.getElementById('bgnOut');
+  const liveRate = document.getElementById('liveRate');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const refreshBtn = document.getElementById('refreshBtn');
+
+  function fmt(n){
+    return n.toLocaleString('bg-BG', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function recalcFromUsd(){
+    if(usdPerEur === null) return;
+    const usd = parseFloat(usdInput.value.replace(',', '.')) || 0;
+    const eur = usd / usdPerEur;
+    eurInput.value = fmt(eur);
+    bgnOut.textContent = fmt(eur * PEG) + ' лв';
+  }
+
+  function recalcFromEur(){
+    if(usdPerEur === null) return;
+    const eur = parseFloat(eurInput.value.replace(',', '.')) || 0;
+    const usd = eur * usdPerEur;
+    usdInput.value = fmt(usd);
+    bgnOut.textContent = fmt(eur * PEG) + ' лв';
+  }
+
+  usdInput.addEventListener('input', recalcFromUsd);
+  eurInput.addEventListener('input', recalcFromEur);
+
+  async function loadRate(){
+    statusDot.className = 'dot loading';
+    statusText.textContent = 'зареждане…';
+    try{
+      const res = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD');
+      if(!res.ok) throw new Error('bad response');
+      const data = await res.json();
+      usdPerEur = data.rates.USD;
+      liveRate.textContent = usdPerEur.toFixed(4);
+      statusDot.className = 'dot';
+      const d = new Date(data.date + 'T00:00:00');
+      statusText.textContent = 'обновено · ' + d.toLocaleDateString('bg-BG');
+      recalcFromUsd();
+    }catch(e){
+      statusDot.className = 'dot err';
+      statusText.textContent = 'грешка при зареждане';
+      liveRate.textContent = '—';
+    }
+  }
+
+  refreshBtn.addEventListener('click', loadRate);
+  loadRate();
+</script>
+</body>
+</html>
