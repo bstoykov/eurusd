@@ -214,6 +214,27 @@
   .refresh:hover{border-color:var(--teal); color:var(--teal);}
   .refresh:focus-visible, .input-wrap input:focus-visible{outline:2px solid var(--teal); outline-offset:2px;}
 
+  .period-row{
+    display:flex;
+    gap:8px;
+    margin-bottom:16px;
+  }
+  .period-btn{
+    flex:1;
+    background:var(--ink);
+    border:1px solid var(--line);
+    color:var(--muted);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    font-weight:600;
+    padding:8px 0;
+    border-radius:6px;
+    cursor:pointer;
+    transition:all .15s ease;
+  }
+  .period-btn:hover{border-color:var(--teal); color:var(--teal);}
+  .period-btn.active{background:rgba(79,209,197,0.12); border-color:var(--teal); color:var(--teal);}
+
   footer{
     margin-top:36px;
     font-family:'IBM Plex Mono', monospace;
@@ -278,6 +299,26 @@
     </div>
 
     <button class="refresh" id="refreshBtn">↻ Обнови курса</button>
+  </div>
+
+  <div class="board chart-card" style="margin-top:24px;">
+    <div class="board-head">
+      <div class="board-title">USD/EUR · история</div>
+      <div class="status"><span class="dot loading" id="chartDot"></span><span id="chartStatus">зареждане…</span></div>
+    </div>
+    <div class="period-row" id="periodRow">
+      <button class="period-btn" data-days="30">1М</button>
+      <button class="period-btn" data-days="150">5М</button>
+      <button class="period-btn" data-days="365">1Г</button>
+      <button class="period-btn" data-days="730">2Г</button>
+    </div>
+    <div id="chartWrap" style="width:100%; overflow:hidden;">
+      <svg id="chartSvg" viewBox="0 0 560 220" style="width:100%; height:auto; display:block;"></svg>
+    </div>
+    <div style="display:flex; justify-content:space-between; margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted);">
+      <span id="chartDateFrom">—</span>
+      <span id="chartDateTo">—</span>
+    </div>
   </div>
 
   <footer>
@@ -371,6 +412,119 @@
 
   refreshBtn.addEventListener('click', loadRate);
   loadRate();
+
+  // ---------- history chart ----------
+  const chartDot = document.getElementById('chartDot');
+  const chartStatus = document.getElementById('chartStatus');
+  const chartSvg = document.getElementById('chartSvg');
+  const chartDateFrom = document.getElementById('chartDateFrom');
+  const chartDateTo = document.getElementById('chartDateTo');
+
+  function isoDate(d){ return d.toISOString().slice(0,10); }
+
+  const NS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs){
+    const el = document.createElementNS(NS, tag);
+    for(const k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function drawChart(points){
+    // points: [{date, rate}], ascending by date
+    chartSvg.innerHTML = '';
+    const W = 560, H = 220, PAD_L = 44, PAD_R = 10, PAD_T = 14, PAD_B = 24;
+    const values = points.map(p => p.rate);
+    const min = Math.min(...values), max = Math.max(...values);
+    const range = (max - min) || 0.0001;
+
+    const x = i => PAD_L + (i / (points.length - 1)) * (W - PAD_L - PAD_R);
+    const y = v => PAD_T + (1 - (v - min) / range) * (H - PAD_T - PAD_B);
+
+    // gridlines + y labels (min / mid / max)
+    [min, (min+max)/2, max].forEach(v => {
+      const yy = y(v);
+      chartSvg.appendChild(svgEl('line', {x1:PAD_L, y1:yy, x2:W-PAD_R, y2:yy, stroke:'#1E3A50', 'stroke-width':1, 'stroke-dasharray':'3,4'}));
+      const t = svgEl('text', {x:4, y:yy+4, 'font-family':'IBM Plex Mono, monospace', 'font-size':10, fill:'#7E97A8'});
+      t.textContent = v.toFixed(4);
+      chartSvg.appendChild(t);
+    });
+
+    // area fill
+    let areaPath = `M ${x(0)} ${y(points[0].rate)}`;
+    points.forEach((p,i) => { areaPath += ` L ${x(i)} ${y(p.rate)}`; });
+    areaPath += ` L ${x(points.length-1)} ${H-PAD_B} L ${x(0)} ${H-PAD_B} Z`;
+    chartSvg.appendChild(svgEl('path', {d:areaPath, fill:'rgba(79,209,197,0.10)', stroke:'none'}));
+
+    // line
+    let linePath = `M ${x(0)} ${y(points[0].rate)}`;
+    points.forEach((p,i) => { if(i>0) linePath += ` L ${x(i)} ${y(p.rate)}`; });
+    chartSvg.appendChild(svgEl('path', {d:linePath, fill:'none', stroke:'#4FD1C5', 'stroke-width':2, 'stroke-linejoin':'round', 'stroke-linecap':'round'}));
+
+    // last point dot
+    const lastX = x(points.length-1), lastY = y(points[points.length-1].rate);
+    chartSvg.appendChild(svgEl('circle', {cx:lastX, cy:lastY, r:4, fill:'#0B1F2E', stroke:'#4FD1C5', 'stroke-width':2}));
+  }
+
+  async function loadHistory(days){
+    chartDot.className = 'dot loading';
+    chartStatus.textContent = 'зареждане…';
+
+    const CACHE_KEY = 'eurusd_hist_' + days;
+    const CACHE_MS = 5 * 24 * 60 * 60 * 1000; // 5 дни
+
+    try{
+      // опитай кеша първо — ако е по-нов от 5 дни, ползвай го веднага
+      const cachedRaw = localStorage.getItem(CACHE_KEY);
+      if(cachedRaw){
+        const cached = JSON.parse(cachedRaw);
+        if(Date.now() - cached.savedAt < CACHE_MS){
+          drawChart(cached.points);
+          chartDateFrom.textContent = cached.points[0].date;
+          chartDateTo.textContent = cached.points[cached.points.length-1].date;
+          chartDot.className = 'dot';
+          chartStatus.textContent = cached.points.length + ' точки · кеш';
+          return;
+        }
+      }
+
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - days);
+      const url = `https://api.frankfurter.app/${isoDate(start)}..${isoDate(end)}?from=EUR&to=USD`;
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const points = Object.keys(data.rates)
+        .sort()
+        .map(d => ({ date: d, rate: data.rates[d].USD }));
+      if(points.length < 2) throw new Error('недостатъчно данни');
+
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), points }));
+
+      drawChart(points);
+      chartDateFrom.textContent = points[0].date;
+      chartDateTo.textContent = points[points.length-1].date;
+      chartDot.className = 'dot';
+      chartStatus.textContent = points.length + ' точки';
+    }catch(e){
+      chartDot.className = 'dot err';
+      chartStatus.textContent = 'грешка: ' + e.message;
+      console.error('История на курса неуспешна:', e);
+    }
+  }
+
+  const periodRow = document.getElementById('periodRow');
+  periodRow.addEventListener('click', (e) => {
+    const btn = e.target.closest('.period-btn');
+    if(!btn) return;
+    periodRow.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadHistory(parseInt(btn.dataset.days, 10));
+  });
+
+  // подразбиране: 1 месец
+  periodRow.querySelector('[data-days="30"]').classList.add('active');
+  loadHistory(30);
 </script>
 </body>
 </html>
