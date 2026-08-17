@@ -364,11 +364,11 @@
   // Try a list of endpoints in order until one works.
   const ENDPOINTS = [
     {
-      url: 'https://api.frankfurter.app/latest?from=EUR&to=USD',
+      url: 'https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD',
       parse: (d) => ({ rate: d.rates.USD, date: d.date })
     },
     {
-      url: 'https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD',
+      url: 'https://api.frankfurter.app/latest?from=EUR&to=USD',
       parse: (d) => ({ rate: d.rates.USD, date: d.date })
     },
     {
@@ -490,10 +490,24 @@
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - days);
-      const url = `https://api.frankfurter.app/${isoDate(start)}..${isoDate(end)}?from=EUR&to=USD`;
-      const res = await fetch(url);
-      if(!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
+      const from = isoDate(start), to = isoDate(end);
+
+      const urls = [
+        `https://api.frankfurter.dev/v1/${from}..${to}?base=EUR&symbols=USD`,
+        `https://api.frankfurter.app/${from}..${to}?from=EUR&to=USD`
+      ];
+
+      let data = null, lastErr = null;
+      for(const u of urls){
+        try{
+          const res = await fetch(u);
+          if(!res.ok) throw new Error('HTTP ' + res.status);
+          data = await res.json();
+          break;
+        }catch(e){ lastErr = e; }
+      }
+      if(!data) throw lastErr || new Error('няма връзка');
+
       const points = Object.keys(data.rates)
         .sort()
         .map(d => ({ date: d, rate: data.rates[d].USD }));
